@@ -1,19 +1,8 @@
 /*********************************************************************
-This is an example for our Monochrome OLEDs based on SSD1306 drivers
+Written by Florian Wachter
+florianwachter.com
+UX Designer & Developer
 
-  Pick one up today in the adafruit shop!
-  ------> http://www.adafruit.com/category/63_98
-
-This example is for a 128x64 size display using I2C to communicate
-3 pins are required to interface (2 I2C and one reset)
-
-Adafruit invests time and resources providing this open source code, 
-please support Adafruit and open-source hardware by purchasing 
-products from Adafruit!
-
-Written by Limor Fried/Ladyada  for Adafruit Industries.  
-BSD license, check license.txt for more information
-All text above, and the splash screen must be included in any redistribution
 *********************************************************************/
 
 #include <SPI.h>
@@ -42,7 +31,7 @@ int potiValue = 0;
 // Brick
 int brickWidth = 20;
 int brickHeight = 2;
-int brickY = 5;
+int brickY = display.height() - 5;
 
 // Ball
 int ballX = 128/2;      
@@ -53,7 +42,7 @@ int ballSpeedY = 1;
 // Sound
 int speakerPin = 8;
 
-int rectWidth = 5;
+int rectWidth = 10;
 int rectHeight = 5;
 
 
@@ -68,12 +57,16 @@ void music(int melody[], int noteDurations[], int notesAmount){
     
 }
 
-
 // -----------------------------------------
 // Pong Global Variables - Game engine
 // -----------------------------------------
 int lifes = 2;
 bool gameIsRunning = true;
+
+int lvl[] = {10,25,40,70,85,100 };
+int lvlSize = 6; 
+int score = 0;
+bool win = false;
 
 
 // -----------------------------------------
@@ -85,19 +78,28 @@ void setup()   {
   pinMode(LED_BUILTIN, OUTPUT);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3D);  // initialize with the I2C addr 0x3D (for the 128x64)
   display.clearDisplay();  
-  //drawIntro();
- 
+  drawIntro();
+  
 }
 
 // -----------------------------------------
 // Pong Loop
 // -----------------------------------------
+
+ 
 void loop() {
   if(gameIsRunning) drawBrick( brickPosition() );
   collisionControl(brickPosition());
   drawBall();
   drawLife();
-  objCollisionControl( drawObjects(5) );
+  
+  drawObjects();
+  objCollisionControl();
+
+  if(win != true){
+    checkForWin();
+  }
+  
   
     
   // ------- ENDE --------
@@ -118,7 +120,7 @@ int brickPosition(){
 }
 
 int drawBrick(int xpos){
-  display.fillRect(xpos, display.height()-brickY, brickWidth, brickHeight, color);
+  display.fillRect(xpos, brickY, brickWidth, brickHeight, color);
 }
 
 void drawBall() {
@@ -141,10 +143,12 @@ int collisionControl(int paddlePositionPlayer) {
   }
  
   // bounce from Brick
-  if (ballY < display.height() - brickY && ballY >= display.height() - brickY - 3 ) {
-    if(ballX > paddlePositionPlayer && ballX <= paddlePositionPlayer + brickWidth){
+  if (ballY < brickY && ballY >= brickY - 4 ) {
+    if(ballX > paddlePositionPlayer && ballX < paddlePositionPlayer + brickWidth){
        ballSpeedY *= -1;
        tone(speakerPin, NOTE_C2, 100);
+       // to make it harder after every hit from the brick
+       makeItHarder();
     }
   }
 
@@ -161,15 +165,13 @@ int collisionControl(int paddlePositionPlayer) {
      
      if(lifes == 0){
       drawGameOver(); 
-      ballSpeedY = 0;
-      ballSpeedX = 0;
-      gameIsRunning = false;
+      stopGame();
      }
   } 
 }
 
 // -----------------------------------------
-// Draw Text
+// Draw 
 // -----------------------------------------
 void drawLife(){
   // display the Amount of lifes left
@@ -177,10 +179,32 @@ void drawLife(){
   display.setTextColor(WHITE);
   display.setCursor(display.width() - 10, 0);
   display.println(lifes);
+ }
+
+void stopGame() {
+  ballSpeedY = 0;
+  ballSpeedX = 0;
+  gameIsRunning = false;
 }
 
 void drawGameOver(){
   drawText(2, "GAME OVER", 10, (display.height()/2)-6 );
+}
+
+void checkForWin() {
+  if (score >= lvlSize ){
+    stopGame();
+    drawText(2, "YOU WON!", 18, (display.height()/2) - 6 );
+    tone(speakerPin, NOTE_E6, 300);
+    delay(500);
+    tone(speakerPin, NOTE_FS6, 600);
+    win = true;
+    
+  } 
+}
+
+void makeItHarder() {
+  brickWidth--;;
 }
 
 void drawIntro(){
@@ -241,35 +265,31 @@ void clearDisplayCach(int delayVal){
 // Objects
 // ----------------------------------------------
 
-int drawObjects(int objectAmount){
-  int margin = 5;
-  int wSize = 0;
-  int startPos = 0;
-  int _objCordinatesX[objectAmount];
-  
-  // Warum ist das arrray 10 felder gross obwohl es 5 sein sollte
-  startPos = (display.width() / 2) - ((rectWidth * (objectAmount - 1) + margin * objectAmount) / 2);
-  for (int i = 0; i < objectAmount; i++){
-    display.fillRect(startPos + rectWidth*i + margin*(i)  , display.height()/3, rectWidth, rectHeight, color);
-    _objCordinatesX[i] = startPos + rectWidth*i + margin*(i);
+void drawObjects(){
+  for (int i = 0; i < lvlSize; i++) {
+   if( lvl[i] != 0 ){
+    display.fillRect(lvl[i], display.height()/3, rectWidth, rectHeight, color);
+   }
   }
-  return _objCordinatesX;
 }
 
-void objCollisionControl(int ObjCX[]) {
+void objCollisionControl() {
   // bounce from object
-  for (int i = 0; i < *(&ObjCX + 1) - ObjCX; i++ ){
-    if(ballY >= display.height()/3 && ballY <= (display.height()/3) + rectHeight ){
-      if (ballX >= ObjCX[i] && ballX <= ObjCX[i] + rectWidth ) {
+  for (int i = 0; i < lvlSize; i++ ){
+    if(ballY > display.height()/3 && ballY < (display.height()/3) + rectHeight ){
+      if (ballX > lvl[i] && ballX < lvl[i] + rectWidth && lvl[i] != 0) {
         ballSpeedY *= -1;
         digitalWrite(LED_BUILTIN, HIGH);
-      }else{
-        digitalWrite(LED_BUILTIN, LOW);
-      }
+        tone(speakerPin, NOTE_A5, 100);
+        score++;
+        lvl[i] = 0;
+        
+      }      
+    }else{
+      digitalWrite(LED_BUILTIN, LOW);
     }
   }
 }
-
 
 
 
